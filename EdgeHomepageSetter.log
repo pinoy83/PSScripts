@@ -1,0 +1,23 @@
+﻿[2025-10-03 00:17:31] [ERROR] Must be run elevated (Administrator).
+[2025-10-03 00:21:38] [INFO ] Starting operation...
+[2025-10-03 00:21:39] [INFO ] Resolved SID: S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:21:39] [ERROR] Failed to resolve profile path for SID S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:21:39] [ERROR] Unable to mount or access user hive.
+[2025-10-03 00:24:04] [INFO ] Starting operation...
+[2025-10-03 00:24:04] [INFO ] Resolved SID: S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:24:05] [INFO ] Loaded user hive for SID S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:24:05] [ERROR] Unexpected failure: The variable '$($statusBefore.StartupMode)' cannot be retrieved because it has not been set.
+[2025-10-03 00:24:05] [INFO ] Completed.
+[2025-10-03 00:27:35] [INFO ] Starting operation...
+[2025-10-03 00:27:35] [INFO ] Resolved SID: S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:27:35] [INFO ] Loaded user hive for SID S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:27:35] [INFO ] Before: StartupMode= URL=
+[2025-10-03 00:27:36] [ERROR] Failed writing Edge policies: Cannot find drive. A drive with the name 'HKU' does not exist.
+[2025-10-03 00:27:36] [INFO ] Completed.
+[2025-10-03 00:29:37] [INFO ] Starting operation...
+[2025-10-03 00:29:37] [INFO ] Created HKU: PSDrive
+[2025-10-03 00:29:37] [INFO ] Resolved SID: S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:29:37] [INFO ] Before: StartupMode= URL=
+[2025-10-03 00:29:37] [ OK  ] Policies applied for SID S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:29:37] [ OK  ] Homepage policy applied successfully.
+[2025-10-03 00:29:37] [INFO ] Completed.

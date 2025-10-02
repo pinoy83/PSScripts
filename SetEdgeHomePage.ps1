@@ -1,249 +1,269 @@
-# Windows 11 Pro Edge Homepage Setter for LibUser
-# This script sets Edge homepage specifically for LibUser account only
-# Can be run remotely using System or Administrator account
-# Requires Administrator privileges
+# Refactored: Windows 11 Edge Homepage Setter for specific local user (LibUser)
+# Purpose:
+#   Sets Microsoft Edge startup behavior and homepage-related policies ONLY for the target user account.
+#   - Opens specified homepage URL at startup (RestoreOnStartup = 4 + URL list)
+#   - Sets Homepage button + Homepage location policies
+#   - Does NOT affect other users
+#
+# Requirements:
+#   - Run as Administrator (to load target user's NTUSER.DAT hive if not logged on)
+#   - PowerShell 5.1+ / Windows 10/11 with Edge Chromium
+#
+# Policies Applied Under User Hive (HKU:<SID>\Software\Policies\Microsoft\Edge):
+#   RestoreOnStartup            (DWORD) 4  -> Open a list of URLs
+#   RestoreOnStartupURLs\1      (REG_SZ)   -> Homepage URL
+#   HomepageLocation             (REG_SZ)   -> Homepage URL (optional but useful if Home button used)
+#   HomepageIsNewTabPage         (DWORD) 0  -> Ensure homepage isn't overridden by new tab
+#   ShowHomeButton               (DWORD) 1  -> Expose Home button (optional UX improvement)
+#
+# Exit Codes:
+#   0 = Success
+#   1 = Not Administrator
+#   2 = Target user not found
+#   3 = Failed to load user hive
+#   4 = Failed registry write or verification mismatch
+#   5 = Unexpected error
 
-# Function to check if running as Administrator
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+#region Configuration
+$TargetUser = 'LibUser'
+$HomepageURL = 'https://www.hitechsupport.com.au'
+$LogFile = Join-Path -Path (Split-Path -Parent $PSCommandPath) -ChildPath 'EdgeHomepageSetter.log'
+#endregion Configuration
+
+function Write-Log {
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [ValidateSet('Info','Warn','Error','Success')][string]$Level = 'Info'
+    )
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $prefix = '[INFO ]'
+    $color = 'Gray'
+    switch ($Level) {
+        'Warn'    { $prefix='[WARN ]'; $color='Yellow' }
+        'Error'   { $prefix='[ERROR]'; $color='Red' }
+        'Success' { $prefix='[ OK  ]'; $color='Green' }
+    }
+    $line = "[$timestamp] $prefix $Message"
+    $line | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+    Write-Host $Message -ForegroundColor $color
+}
+
+function Ensure-HKURoot {
+    if (-not (Get-PSDrive -Name HKU -ErrorAction SilentlyContinue)) {
+        try {
+            New-PSDrive -Name HKU -PSProvider Registry -Root HKEY_USERS -Scope Script | Out-Null
+            Write-Log -Message 'Created HKU: PSDrive' -Level Info
+        }
+        catch {
+            Write-Log -Level Error -Message "Failed to create HKU PSDrive: $($_.Exception.Message)"
+            throw
+        }
+    }
+}
+
 function Test-Administrator {
     $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# Function to get LibUser SID
-function Get-LibUserSID {
+function Get-LocalUserSidValue {
+    param([Parameter(Mandatory)][string]$UserName)
     try {
-        $libUser = Get-LocalUser -Name "LibUser" -ErrorAction Stop
-        $sid = $libUser.SID.Value
-        return $sid
+        $user = Get-LocalUser -Name $UserName -ErrorAction Stop
+        return $user.SID.Value
     }
     catch {
-        Write-Host "Error: LibUser account not found." -ForegroundColor Red
         return $null
     }
 }
 
-# Function to write log entries
-function Write-LogEntry {
-    param([string]$Message)
-    
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
-    $logFile = Join-Path $scriptDir "EdgeHomepageSetter.log"
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] $Message"
-    
-    # Write to log file
-    $logEntry | Out-File $logFile -Append -Force
-    
-    # Also display on screen
-    Write-Host $Message -ForegroundColor Green
+function Mount-UserHiveIfNeeded {
+    <#
+        .SYNOPSIS
+            Ensures HKU:\<SID> is available; loads NTUSER.DAT if needed.
+        .OUTPUTS
+            [pscustomobject] @{ Sid=<sid>; Mounted=$true/$false; HiveLoaded=$true if we loaded } or $null on failure
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Sid,
+        [Parameter(Mandatory)][string]$UserName,
+        [int]$RetryCount = 2,
+        [int]$RetryDelayMs = 700
+    )
+    Ensure-HKURoot
+    $already = Test-Path "HKU:\$Sid"
+    if ($already) {
+        return [pscustomobject]@{ Sid=$Sid; Mounted=$true; HiveLoaded=$false }
+    }
+    $profilePath = $null
+    for ($i=0; $i -le $RetryCount -and -not $profilePath; $i++) {
+        $profile = Get-WmiObject -Class Win32_UserProfile -Filter "SID='$Sid'" -ErrorAction SilentlyContinue
+        if ($profile -and $profile.LocalPath -and (Test-Path $profile.LocalPath)) {
+            $profilePath = $profile.LocalPath
+            break
+        }
+        if ($i -lt $RetryCount) { Start-Sleep -Milliseconds $RetryDelayMs }
+    }
+    if (-not $profilePath) {
+        # Fallback: assume standard user profile path (may fail if roaming / renamed)
+        $assumed = Join-Path $env:SystemDrive (Join-Path 'Users' $UserName)
+        if (Test-Path $assumed) {
+            Write-Log -Level Warn -Message "Falling back to assumed profile path: $assumed"
+            $profilePath = $assumed
+        }
+    }
+    if (-not $profilePath) {
+        Write-Log -Level Error -Message "Failed to resolve profile path for SID $Sid"
+        return $null
+    }
+    $ntUserDat = Join-Path $profilePath 'NTUSER.DAT'
+    if (-not (Test-Path $ntUserDat)) {
+        Write-Log -Level Error -Message "NTUSER.DAT not found at $ntUserDat"
+        return $null
+    }
+    try {
+        & reg.exe load "HKU\$Sid" "$ntUserDat" | Out-Null
+        Write-Log -Level Info -Message "Loaded user hive for SID $Sid"
+        return [pscustomobject]@{ Sid=$Sid; Mounted=$true; HiveLoaded=$true }
+    }
+    catch {
+        Write-Log -Level Error -Message "Failed to load user hive: $($_.Exception.Message)"
+        return $null
+    }
 }
 
-# Function to set Edge homepage for LibUser
-function Set-EdgeHomepageForLibUser {
-    param([string]$HomepageURL)
-    
+function Dismount-UserHiveIfLoaded {
+    param(
+        [Parameter(Mandatory)][pscustomobject]$HiveInfo
+    )
+    if ($HiveInfo.HiveLoaded -and (Test-Path "HKU:\$($HiveInfo.Sid)")) {
+        try {
+            Start-Sleep -Milliseconds 500
+            & reg.exe unload "HKU\$($HiveInfo.Sid)" | Out-Null
+            Write-Log -Level Info -Message "Unloaded user hive for SID $($HiveInfo.Sid)"
+        }
+        catch {
+            Write-Log -Level Warn -Message "Could not unload user hive (in use?): $($_.Exception.Message)"
+        }
+    }
+}
+
+function Ensure-RegistryPath {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+}
+
+function Set-EdgeHomepageForUser {
+    <#
+        .RETURNS $true on success, $false on failure
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Sid,
+        [Parameter(Mandatory)][string]$Homepage
+    )
     try {
-        Write-Host "Setting Edge homepage for LibUser to: $HomepageURL" -ForegroundColor Yellow
-        
-        # Get LibUser SID
-        $libUserSID = Get-LibUserSID
-        if (-not $libUserSID) {
-            return $false
-        }
-        
-        Write-Host "Found LibUser SID: $libUserSID" -ForegroundColor Green
-        
-        # Registry paths for LibUser-specific Edge policies
-        $registryPath = "HKU:\$libUserSID\Software\Policies\Microsoft\Edge"
-        $startupURLsPath = "HKU:\$libUserSID\Software\Policies\Microsoft\Edge\RestoreOnStartupURLs"
-        
-        # Load LibUser registry hive if not already loaded
-        $hiveMounted = $false
-        if (-not (Test-Path "HKU:\$libUserSID")) {
-            $libUserProfile = Get-WmiObject -Class Win32_UserProfile | Where-Object { $_.SID -eq $libUserSID }
-            if ($libUserProfile -and $libUserProfile.LocalPath) {
-                $ntUserDat = Join-Path $libUserProfile.LocalPath "NTUSER.DAT"
-                if (Test-Path $ntUserDat) {
-                    reg load "HKU\$libUserSID" "$ntUserDat" | Out-Null
-                    $hiveMounted = $true
-                    Write-Host "Loaded LibUser registry hive." -ForegroundColor Green
-                }
-            }
-        }
-        
-        # Create the Edge policies registry path if it doesn't exist
-        if (-not (Test-Path $registryPath)) {
-            New-Item -Path $registryPath -Force | Out-Null
-            Write-Host "Created Edge policies registry path." -ForegroundColor Green
-        }
-        
-        # Set the RestoreOnStartup policy to open specific URLs (4 = Open a list of URLs)
-        Set-ItemProperty -Path $registryPath -Name "RestoreOnStartup" -Value 4 -PropertyType DWord -Force
-        Write-Host "Set RestoreOnStartup policy to open specific URLs." -ForegroundColor Green
-        
-        # Create the startup URLs registry path if it doesn't exist
-        if (-not (Test-Path $startupURLsPath)) {
-            New-Item -Path $startupURLsPath -Force | Out-Null
-            Write-Host "Created startup URLs registry path." -ForegroundColor Green
-        }
-        
-        # Set the desired homepage URL
-        Set-ItemProperty -Path $startupURLsPath -Name "1" -Value $HomepageURL -PropertyType String -Force
-        Write-Host "Set homepage URL to: $HomepageURL" -ForegroundColor Green
-        
-        # Unload the hive if we mounted it
-        if ($hiveMounted) {
-            Start-Sleep -Seconds 2  # Give time for registry operations to complete
-            reg unload "HKU\$libUserSID" | Out-Null
-            Write-Host "Unloaded LibUser registry hive." -ForegroundColor Green
-        }
-        
-        Write-Host "Edge homepage configured successfully for LibUser." -ForegroundColor Green
+        Ensure-HKURoot
+        $base = "HKU:\$Sid\Software\Policies\Microsoft\Edge"
+        $urls = Join-Path $base 'RestoreOnStartupURLs'
+        Ensure-RegistryPath -Path $base
+        Ensure-RegistryPath -Path $urls
+
+        New-ItemProperty -Path $base -Name 'RestoreOnStartup' -PropertyType DWord -Value 4 -Force | Out-Null
+        New-ItemProperty -Path $urls -Name '1' -PropertyType String -Value $Homepage -Force | Out-Null
+
+        New-ItemProperty -Path $base -Name 'HomepageLocation' -PropertyType String -Value $Homepage -Force | Out-Null
+        New-ItemProperty -Path $base -Name 'HomepageIsNewTabPage' -PropertyType DWord -Value 0 -Force | Out-Null
+        New-ItemProperty -Path $base -Name 'ShowHomeButton' -PropertyType DWord -Value 1 -Force | Out-Null
+
+        Write-Log -Level Success -Message "Policies applied for SID $Sid"
         return $true
     }
     catch {
-        Write-Host "Error setting Edge homepage for LibUser: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log -Level Error -Message "Failed writing Edge policies: $($_.Exception.Message)"
         return $false
     }
 }
 
-# Function to check current Edge homepage for LibUser
-function Get-LibUserEdgeHomepage {
-    try {
-        Write-Host "`nLibUser Edge Homepage Status:" -ForegroundColor Cyan
-        
-        # Get LibUser SID
-        $libUserSID = Get-LibUserSID
-        if (-not $libUserSID) {
-            Write-Host "✗ LibUser account not found" -ForegroundColor Red
-            return
-        }
-        
-        # Check if LibUser hive is loaded
-        $hiveMounted = $false
-        if (-not (Test-Path "HKU:\$libUserSID")) {
-            $libUserProfile = Get-WmiObject -Class Win32_UserProfile | Where-Object { $_.SID -eq $libUserSID }
-            if ($libUserProfile -and $libUserProfile.LocalPath) {
-                $ntUserDat = Join-Path $libUserProfile.LocalPath "NTUSER.DAT"
-                if (Test-Path $ntUserDat) {
-                    reg load "HKU\$libUserSID" "$ntUserDat" | Out-Null
-                    $hiveMounted = $true
-                }
-            }
-        }
-        
-        # Check LibUser-specific Edge settings
-        $registryPath = "HKU:\$libUserSID\Software\Policies\Microsoft\Edge"
-        $startupURLsPath = "HKU:\$libUserSID\Software\Policies\Microsoft\Edge\RestoreOnStartupURLs"
-        
-        $restorePolicy = Get-ItemProperty -Path $registryPath -Name "RestoreOnStartup" -ErrorAction SilentlyContinue
-        $homepageURL = Get-ItemProperty -Path $startupURLsPath -Name "1" -ErrorAction SilentlyContinue
-        
-        if ($restorePolicy -and $restorePolicy.RestoreOnStartup -eq 4 -and $homepageURL) {
-            Write-Host "✓ Edge Homepage configured: $($homepageURL.'1')" -ForegroundColor Green
-        } else {
-            Write-Host "✗ Edge Homepage not configured" -ForegroundColor Red
-        }
-        
-        # Unload the hive if we mounted it
-        if ($hiveMounted) {
-            Start-Sleep -Seconds 1
-            reg unload "HKU\$libUserSID" | Out-Null
-        }
+function Get-EdgeHomepageStatusForUser {
+    param([Parameter(Mandatory)][string]$Sid)
+    $base = "HKU:\$Sid\Software\Policies\Microsoft\Edge"
+    $urls = "$base\RestoreOnStartupURLs"
+    $result = [ordered]@{ Sid=$Sid; Exists=$false; StartupMode=$null; URL=$null; HomepageLocation=$null }
+    if (-not (Test-Path $base)) { return [pscustomobject]$result }
+    $result.Exists = $true
+    $props = Get-ItemProperty -Path $base -ErrorAction SilentlyContinue
+    if ($props) { $result.StartupMode = $props.RestoreOnStartup; $result.HomepageLocation = $props.HomepageLocation }
+    if (Test-Path $urls) {
+        $u1 = (Get-ItemProperty -Path $urls -Name '1' -ErrorAction SilentlyContinue)
+        if ($u1) { $result.URL = $u1.'1' }
     }
-    catch {
-        Write-Host "Error checking Edge homepage: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
+    return [pscustomobject]$result
 }
 
-# Main execution
-Write-Host "Windows 11 Pro Edge Homepage Setter for LibUser" -ForegroundColor Cyan
-Write-Host "=================================================" -ForegroundColor Cyan
-Write-Host "This script sets Edge homepage for LibUser account only" -ForegroundColor Cyan
+Write-Host 'Edge Homepage Setter (User-Specific Policy)' -ForegroundColor Cyan
+Write-Host '================================================' -ForegroundColor Cyan
+Write-Host "Target User : $TargetUser" -ForegroundColor Cyan
+Write-Host "Homepage    : $HomepageURL" -ForegroundColor Cyan
 
-# Check if running as Administrator
 if (-not (Test-Administrator)) {
-    Write-Host "This script requires Administrator privileges. Please run as Administrator." -ForegroundColor Red
+    Write-Log -Level Error -Message 'Must be run elevated (Administrator).'
     exit 1
 }
 
-# Set execution policy for current process
-try {
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-    Write-Host "Execution policy set for current session." -ForegroundColor Green
-}
-catch {
-    Write-Host "Warning: Could not modify execution policy." -ForegroundColor Yellow
-}
+Write-Log -Message 'Starting operation...'
 
-# Define the homepage URL
-$homepageURL = "https://www.hitechsupport.com.au"
+# Ensure HKU provider is available early
+Ensure-HKURoot
 
-# Check if LibUser exists
-try {
-    $libUser = Get-LocalUser -Name "LibUser" -ErrorAction SilentlyContinue
-    if (-not $libUser) {
-        Write-Host "Error: LibUser account not found. Cannot set homepage." -ForegroundColor Red
-        exit 1
-    } else {
-        Write-Host "LibUser account found. Setting Edge homepage..." -ForegroundColor Green
-    }
+$sid = Get-LocalUserSidValue -UserName $TargetUser
+if (-not $sid) {
+    Write-Log -Level Error -Message "User '$TargetUser' not found. Aborting."
+    exit 2
 }
-catch {
-    Write-Host "Error: Could not check for LibUser account." -ForegroundColor Red
-    exit 1
+Write-Log -Message "Resolved SID: $sid"
+
+$hiveInfo = Mount-UserHiveIfNeeded -Sid $sid -UserName $TargetUser
+if (-not $hiveInfo) {
+    Write-Log -Level Error -Message 'Unable to mount or access user hive.'
+    exit 3
 }
 
 try {
-    # Show current status
-    Get-LibUserEdgeHomepage
-    
-    Write-Host "`nApplying Edge homepage settings for LibUser..." -ForegroundColor Yellow
-    
-    # Set homepage
-    if (Set-EdgeHomepageForLibUser -HomepageURL $homepageURL) {
-        Write-LogEntry "Edge homepage set to $homepageURL for LibUser"
-        $success = $true
-    } else {
-        $success = $false
+    $statusBefore = Get-EdgeHomepageStatusForUser -Sid $sid
+    Write-Log -Message ("Before: StartupMode={0} URL={1}" -f $($statusBefore.StartupMode), $($statusBefore.URL))
+
+    if (-not (Set-EdgeHomepageForUser -Sid $sid -Homepage $HomepageURL)) {
+        exit 4
     }
-    
-    # Show final status
-    Write-Host "`nFinal Status:" -ForegroundColor Cyan
-    Get-LibUserEdgeHomepage
-    
-    if ($success) {
-        Write-Host "`nEdge homepage configured successfully for LibUser!" -ForegroundColor Green
-        Write-LogEntry "Edge homepage configured successfully for LibUser only"
-        Write-Host "LibUser will see the new homepage when starting Edge." -ForegroundColor Yellow
-        Write-Host "Other users are not affected by this change." -ForegroundColor Green
+
+    $statusAfter = Get-EdgeHomepageStatusForUser -Sid $sid
+    Write-Host ''
+    Write-Host 'Verification:' -ForegroundColor Cyan
+    Write-Host ("  Startup Mode : {0}" -f $statusAfter.StartupMode)
+    Write-Host ("  Startup URL  : {0}" -f $statusAfter.URL)
+    Write-Host ("  Homepage     : {0}" -f $statusAfter.HomepageLocation)
+
+    if ($statusAfter.StartupMode -eq 4 -and $statusAfter.URL -eq $HomepageURL) {
+        Write-Log -Level Success -Message 'Homepage policy applied successfully.'
+        exit 0
     } else {
-        Write-Host "`nFailed to configure Edge homepage for LibUser" -ForegroundColor Yellow
+        Write-Log -Level Warn -Message 'Policies applied but verification did not match expected values.'
+        exit 4
     }
-    
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
-    $logFile = Join-Path $scriptDir "EdgeHomepageSetter.log"
-    Write-Host "`nLog file location: $logFile" -ForegroundColor Cyan
 }
 catch {
-    Write-Host "An error occurred: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
+    Write-Log -Level Error -Message "Unexpected failure: $($_.Exception.Message)"
+    exit 5
+}
+finally {
+    Dismount-UserHiveIfLoaded -HiveInfo $hiveInfo
+    Write-Log -Message 'Completed.'
 }
 
-# Usage information
-<#
-# Simple usage - no parameters needed
-.\SetEdgeHomePage.ps1
-
-# What this script does:
-# - Sets Edge homepage to https://www.hitechsupport.com.au for LibUser only
-# - Configures RestoreOnStartup policy to open specific URLs
-# - Uses LibUser-specific registry settings in NTUSER.DAT
-
-# Important notes:
-# - Only affects LibUser account, other users are not affected
-# - Can be run remotely using System or Administrator account
-# - Uses user-specific registry settings in LibUser's profile
-# - Changes take effect when LibUser next starts Edge
-#>
+# End of script
