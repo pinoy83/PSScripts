@@ -29,7 +29,7 @@ $ErrorActionPreference = 'Stop'
 
 #region Configuration
 $TargetUser = 'LibUser'
-$HomepageURL = 'https://www.hitechsupport.com.au'
+$HomepageURL = 'https://www.nytimes.com'
 $LogFile = Join-Path -Path (Split-Path -Parent $PSCommandPath) -ChildPath 'EdgeHomepageSetter.log'
 #endregion Configuration
 

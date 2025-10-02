@@ -21,3 +21,18 @@
 [2025-10-03 00:29:37] [ OK  ] Policies applied for SID S-1-5-21-1784558660-779042717-3345007726-1026
 [2025-10-03 00:29:37] [ OK  ] Homepage policy applied successfully.
 [2025-10-03 00:29:37] [INFO ] Completed.
+[2025-10-03 00:42:15] [ERROR] Must be run elevated (Administrator).
+[2025-10-03 00:42:30] [INFO ] Starting operation...
+[2025-10-03 00:42:30] [INFO ] Created HKU: PSDrive
+[2025-10-03 00:42:30] [INFO ] Resolved SID: S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:42:30] [INFO ] Before: StartupMode=4 URL=https://www.hitechsupport.com.au
+[2025-10-03 00:42:30] [ OK  ] Policies applied for SID S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:42:30] [ OK  ] Homepage policy applied successfully.
+[2025-10-03 00:42:30] [INFO ] Completed.
+[2025-10-03 00:43:37] [INFO ] Starting operation...
+[2025-10-03 00:43:37] [INFO ] Created HKU: PSDrive
+[2025-10-03 00:43:37] [INFO ] Resolved SID: S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:43:37] [INFO ] Before: StartupMode= URL=
+[2025-10-03 00:43:37] [ OK  ] Policies applied for SID S-1-5-21-1784558660-779042717-3345007726-1026
+[2025-10-03 00:43:37] [ OK  ] Homepage policy applied successfully.
+[2025-10-03 00:43:37] [INFO ] Completed.
