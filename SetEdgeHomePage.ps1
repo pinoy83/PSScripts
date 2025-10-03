@@ -24,12 +24,15 @@
 #   4 = Failed registry write or verification mismatch
 #   5 = Unexpected error
 
+param(
+    [string]$TargetUser = 'LibUser',
+    [string]$HomepageURL = 'https://www.nytimes.com'
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 #region Configuration
-$TargetUser = 'LibUser'
-$HomepageURL = 'https://www.nytimes.com'
 $LogFile = Join-Path -Path (Split-Path -Parent $PSCommandPath) -ChildPath 'EdgeHomepageSetter.log'
 #endregion Configuration
 
@@ -213,6 +216,7 @@ Write-Host "Homepage    : $HomepageURL" -ForegroundColor Cyan
 
 if (-not (Test-Administrator)) {
     Write-Log -Level Error -Message 'Must be run elevated (Administrator).'
+    Write-Host 'Exit Code : 1' -ForegroundColor Cyan
     exit 1
 }
 
@@ -224,6 +228,7 @@ Ensure-HKURoot
 $sid = Get-LocalUserSidValue -UserName $TargetUser
 if (-not $sid) {
     Write-Log -Level Error -Message "User '$TargetUser' not found. Aborting."
+    Write-Host 'Exit Code : 2' -ForegroundColor Cyan
     exit 2
 }
 Write-Log -Message "Resolved SID: $sid"
@@ -231,6 +236,7 @@ Write-Log -Message "Resolved SID: $sid"
 $hiveInfo = Mount-UserHiveIfNeeded -Sid $sid -UserName $TargetUser
 if (-not $hiveInfo) {
     Write-Log -Level Error -Message 'Unable to mount or access user hive.'
+    Write-Host 'Exit Code : 3' -ForegroundColor Cyan
     exit 3
 }
 
@@ -239,6 +245,7 @@ try {
     Write-Log -Message ("Before: StartupMode={0} URL={1}" -f $($statusBefore.StartupMode), $($statusBefore.URL))
 
     if (-not (Set-EdgeHomepageForUser -Sid $sid -Homepage $HomepageURL)) {
+        Write-Host 'Exit Code : 4 (Failed applying policies)' -ForegroundColor Yellow
         exit 4
     }
 
@@ -251,14 +258,17 @@ try {
 
     if ($statusAfter.StartupMode -eq 4 -and $statusAfter.URL -eq $HomepageURL) {
         Write-Log -Level Success -Message 'Homepage policy applied successfully.'
+        Write-Host 'Exit Code : 0' -ForegroundColor Cyan
         exit 0
     } else {
         Write-Log -Level Warn -Message 'Policies applied but verification did not match expected values.'
+        Write-Host 'Exit Code : 4 (Verification mismatch)' -ForegroundColor Yellow
         exit 4
     }
 }
 catch {
     Write-Log -Level Error -Message "Unexpected failure: $($_.Exception.Message)"
+    Write-Host 'Exit Code : 5' -ForegroundColor Cyan
     exit 5
 }
 finally {
