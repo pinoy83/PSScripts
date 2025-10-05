@@ -112,12 +112,28 @@ function Write-CMDPolicyEvent {
 #endregion
 
 #region User and Registry Functions
-function Ensure-HKUDRIVE {
+function Test-HKUDRIVE {
     if (-not (Get-PSDrive -Name HKU -ErrorAction SilentlyContinue)) {
+        Write-Host "HKU: drive not found. Creating HKU: drive..." -ForegroundColor Yellow
         New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
+        Start-Sleep -Milliseconds 500
+        Write-Host "HKU: drive created." -ForegroundColor Green
+    } else {
+        Write-Host "HKU: drive already exists." -ForegroundColor Cyan
     }
 }
 
+function Reset-HKUDRIVE {
+    if (Get-PSDrive -Name HKU -ErrorAction SilentlyContinue) {
+        Write-Host "Removing HKU: drive for refresh..." -ForegroundColor Yellow
+        Remove-PSDrive -Name HKU -Force
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Host "Re-creating HKU: drive..." -ForegroundColor Yellow
+    New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
+    Start-Sleep -Milliseconds 500
+    Write-Host "HKU: drive refreshed." -ForegroundColor Green
+}
 function Get-UserSID {
     param([Parameter(Mandatory)][string]$Username)
 
@@ -152,8 +168,13 @@ function Get-UserProfilePath {
 
 function Test-UserHiveLoaded {
     param([Parameter(Mandatory)][string]$SID)
-    Ensure-HKUDRIVE
-    return Test-Path "HKU:\$SID"
+    $isLoaded = Test-Path "HKU:\$SID"
+    if ($isLoaded) {
+        Write-Host "User hive for SID $SID is already loaded (user may be logged in)." -ForegroundColor Cyan
+    } else {
+        Write-Host "User hive for SID $SID is NOT loaded (user likely not logged in)." -ForegroundColor Yellow
+    }
+    return $isLoaded
 }
 
 function Mount-UserHive {
@@ -169,9 +190,11 @@ function Mount-UserHive {
     }
 
     try {
-        Ensure-HKUDRIVE
-        # Load the hive
+        Write-Host "Bouncing HKU PSDrive to ensure fresh state..." -ForegroundColor Yellow
+        Reset-HKUDRIVE
+        Write-Host "Attempting to mount user hive for SID $SID from $ntUserDat ..." -ForegroundColor Yellow
         $result = & reg.exe load "HKU\$SID" $ntUserDat 2>&1
+        Write-Host "reg.exe output:` $result" -ForegroundColor Magenta
 
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to load user hive: $($result -join ' ')"
@@ -190,7 +213,6 @@ function Dismount-UserHive {
     $maxTries = 5
     $try = 1
     while ($try -le $maxTries) {
-        Ensure-HKUDRIVE
         Start-Sleep -Milliseconds 500
         $result = & reg.exe unload "HKU\$SID" 2>&1
         if ($LASTEXITCODE -eq 0) {
@@ -216,34 +238,53 @@ function Set-CMDPolicy {
         [Parameter(Mandatory)][int]$PolicyValue,
         [Parameter(Mandatory)][string]$Action
     )
-    Ensure-HKUDRIVE
-    $regPath = "HKU:\$SID\$PolicyRegPath"
+
+    $regPath = "HKU\$SID\$PolicyRegPath"
 
     try {
-        # Create registry path if it doesn't exist
-        if (-not (Test-Path $regPath)) {
-            New-Item -Path $regPath -Force | Out-Null
-            Write-Host "Created registry path: $regPath" -ForegroundColor Yellow
+        Write-Host "Set-CMDPolicy: Setting $PolicyName via reg.exe at $regPath..." -ForegroundColor Yellow
+
+        # Add / create the key/value using reg.exe
+        $addResult = & reg.exe add $regPath /v $PolicyName /t REG_DWORD /d $PolicyValue /f 2>&1
+        Write-Host "Set-CMDPolicy: reg.exe add output: $($addResult -join ' ')" -ForegroundColor Magenta
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "reg.exe add failed: $($addResult -join ' ')"
         }
 
-        # Set the policy value
-        Set-ItemProperty -Path $regPath -Name $PolicyName -Value $PolicyValue -Type DWord -Force
+        # Verify the value with reg.exe query
+        $queryResult = & reg.exe query $regPath /v $PolicyName 2>&1
+        Write-Host "Set-CMDPolicy: reg.exe query output: $($queryResult -join ' ')" -ForegroundColor Magenta
 
-        # Verify the setting
-        $verification = Get-ItemProperty -Path $regPath -Name $PolicyName -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0) {
+            throw "reg.exe query failed: $($queryResult -join ' ')"
+        }
 
-        if ($verification.$PolicyName -eq $PolicyValue) {
-            $message = "$Action Command Prompt policy for user SID: $SID (Value: $PolicyValue)"
-            Write-Host $message -ForegroundColor Green
-            Write-CMDPolicyEvent -Message $message -EventId 1001 -EntryType Information
-            return $true
+        $queryText = $queryResult -join ' '
+        if ($queryText -match '0x([0-9A-Fa-f]+)') {
+            $hex = $Matches[1]
+            $actual = [convert]::ToInt32($hex,16)
+            if ($actual -eq $PolicyValue) {
+                $message = "$Action Command Prompt policy for user SID: $SID (Value: $PolicyValue)"
+                Write-Host $message -ForegroundColor Green
+                Write-CMDPolicyEvent -Message $message -EventId 1001 -EntryType Information
+                Write-Host "Set-CMDPolicy: SUCCESS" -ForegroundColor Green
+                return $true
+            }
+            else {
+                $failMsg = "Policy verification failed. Expected: $PolicyValue, Got: $actual"
+                Write-Host "Set-CMDPolicy: FAILURE - $failMsg" -ForegroundColor Red
+                Write-CMDPolicyEvent -Message $failMsg -EventId 1002 -EntryType Error
+                return $false
+            }
         }
         else {
-            throw "Policy verification failed. Expected: $PolicyValue, Got: $($verification.$PolicyName)"
+            throw "Policy verification failed: unexpected reg.exe output: $queryText"
         }
     }
     catch {
-        $errorMsg = "Failed to $Action Command Prompt policy for SID $SID`: $($_.Exception.Message)"
+        $errorMsg = "Set-CMDPolicy: EXCEPTION - Failed to $Action Command Prompt policy for SID $SID`: $($_.Exception.Message)"
+        Write-Host $errorMsg -ForegroundColor Red
         Write-Error $errorMsg
         Write-CMDPolicyEvent -Message $errorMsg -EventId 1002 -EntryType Error
         return $false
@@ -252,7 +293,6 @@ function Set-CMDPolicy {
 
 function Get-CurrentCMDPolicy {
     param([Parameter(Mandatory)][string]$SID)
-    Ensure-HKUDRIVE
     $regPath = "HKU:\$SID\$PolicyRegPath"
 
     try {
@@ -268,6 +308,10 @@ function Get-CurrentCMDPolicy {
         return $null
     }
 }
+
+# At the start of your script, before any HKU: usage:
+Test-HKUDRIVE
+
 #endregion
 
 #region Main Execution
@@ -298,6 +342,7 @@ function Main {
 
         if (-not $hiveWasLoaded) {
             Write-Host "User hive not loaded, mounting..." -ForegroundColor Yellow
+            Reset-HKUDRIVE
             Mount-UserHive -SID $userSID -ProfilePath $profilePath
             $hiveMountedByScript = $true
         }
@@ -305,10 +350,13 @@ function Main {
             Write-Host "User hive already loaded" -ForegroundColor Green
         }
 
+        #Ensure Hive is loaded
+        Test-UserHiveLoaded -SID $userSID
         # Ensure HKU drive after mounting
-        Ensure-HKUDRIVE
+        Test-HKUDRIVE
 
         # Check current policy status
+        Reset-HKUDRIVE
         $currentPolicy = Get-CurrentCMDPolicy -SID $userSID
         $currentStatus = switch ($currentPolicy) {
             0 { "Enabled" }
@@ -344,13 +392,16 @@ function Main {
         Write-CMDPolicyEvent -Message $errorMsg -EventId 1002 -EntryType Error
         exit 1
     }
-    finally {
-        # Clean up: dismount hive if we mounted it
-        if ($hiveMountedByScript -and $userSID) {
-            Write-Host "Cleaning up user hive..." -ForegroundColor Yellow
-            Dismount-UserHive -SID $userSID
-        }
+finally {
+    # Clean up: dismount hive if we mounted it
+    if ($hiveMountedByScript -and $userSID) {
+        Write-Host "Cleaning up user hive..." -ForegroundColor Yellow
+        Dismount-UserHive -SID $userSID
+        # Write-Host "Dismounting user hive... Not Really..." -ForegroundColor Yellow
+    } else {
+        Write-Host "Hive was not mounted by script, skipping dismount." -ForegroundColor Cyan
     }
+}   
 
     Write-Host ""
     Write-Host "Operation completed successfully!" -ForegroundColor Green
