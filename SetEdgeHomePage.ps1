@@ -8,6 +8,8 @@
 # Requirements:
 #   - Run as Administrator (to load target user's NTUSER.DAT hive if not logged on)
 #   - PowerShell 5.1+ / Windows 10/11 with Edge Chromium
+#   - Target user must exist as a local user account
+#   - PC must be domain-joined/managed (via Intune or WFUB not workgroup)
 #
 # Policies Applied Under User Hive (HKU:<SID>\Software\Policies\Microsoft\Edge):
 #   RestoreOnStartup            (DWORD) 4  -> Open a list of URLs
