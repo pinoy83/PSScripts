@@ -1,1 +1,0 @@
-winget install --id 9WZDNCRFHWD2 -e --silent
