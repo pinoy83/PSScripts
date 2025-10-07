@@ -2,13 +2,10 @@
 # Configuration
 # -------------------------------
 $Apps = @(
-  #  @{ Name = "Epic Games"; Id = "XP99VR1BPSBQJ2" }
-    @{ Name = "Microsoft Solitaire"; Id = "9WZDNCRFHVN5" }
-  #  @{ Name = "Minecraft Education"; Id = "9NBLGGH4R2R6" },
-  #  @{ Name = "Teams"; Id = "XP8BT8DW290MPQ" }
+    @{ Name = "Epic Games"; Id = "XP99VR1BPSBQJ2" }
 )
 
-$LogFile = "C:\Users\Rico\Documents\StoreAppInstallLog.txt"  # Change path as needed
+$LogFile = "C:\Applications\StoreAppAdminInstallLog.txt"  # Change path as needed
 
 # Ensure log directory exists
 $LogDir = Split-Path $LogFile

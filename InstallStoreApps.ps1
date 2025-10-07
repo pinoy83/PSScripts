@@ -2,14 +2,13 @@
 # Configuration
 # -------------------------------
 $Apps = @(
- # Does not work   @{ Name = "Microsoft Solitaire"; Id = "9WZDNCRFHWD2"; PackageName = "*MicrosoftSolitaireCollection*" }
- # Works   @{ Name = "Minecraft Education"; Id = "9NBLGGH4R2R6"; PackageName = "*MinecraftEducation*" },
- # Works   @{ Name = "Teams"; Id = "XP8BT8DW290MPQ"; PackageName = "*Teams*" },
+    @{ Name = "Minecraft Education"; Id = "9NBLGGH4R2R6"; PackageName = "*MinecraftEducation*" },
+    @{ Name = "Teams"; Id = "XP8BT8DW290MPQ"; PackageName = "*Teams*" },
     @{ Name = "Minecraft Launcher"; Id = "9PGW18NPBZV5"; PackageName = "*4297127D64EC6*" },
     @{ Name = "Minecraft Bedrock"; Id = "9NBLGGH2JHXJ"; PackageName = "*MinecraftUWP*" }
 )
 
-$LogFile = "C:\Users\Rico Delfinado\Documents\StoreAppInstallLog.txt"  # Change path as needed
+$LogFile = "C:\Applications\StoreAppInstallLog.txt"  # Change path as needed
 
 # Ensure log directory exists
 $LogDir = Split-Path $LogFile
