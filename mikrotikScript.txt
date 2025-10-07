@@ -1,5 +1,0 @@
-# Create the script first
-/system script add name="clear-hotspot-users" source="/ip hotspot active remove [find]"
-
-# Create the scheduler to run at 11:59 PM daily
-/system scheduler add name="clear-hotspot-daily" start-date=jan/01/1970 start-time=23:59:00 interval=1d on-event="clear-hotspot-users"
