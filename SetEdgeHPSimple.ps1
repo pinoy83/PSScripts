@@ -9,7 +9,8 @@
 .NOTES
     Run this at user logon - no elevation required
     Always updates the registry regardless of current values. Upon testing, the policy is being blocked in a workgroup environment..
-#>
+
+    #>
 
 param(
     [string]$HomepageURL = 'https://www.smh.com.au'
