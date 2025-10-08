@@ -2,7 +2,9 @@
 # Configuration
 # -------------------------------
 $Apps = @(
-    @{ Name = "Epic Games"; Id = "XP99VR1BPSBQJ2" }
+    @{ Name = "Epic Games"; Id = "XP99VR1BPSBQJ2" },
+    @{ Name = "OBS Studio"; Id = "XPFFH613W8V6LV"; PackageName = "*OBS*" }
+
 )
 
 $LogFile = "C:\Applications\StoreAppAdminInstallLog.txt"  # Change path as needed
