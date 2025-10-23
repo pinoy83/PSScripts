@@ -2,11 +2,9 @@
 # Configuration
 # -------------------------------
 $Apps = @(
-#    @{ Name = "Minecraft Education"; Id = "9NBLGGH4R2R6"; PackageName = "*MinecraftEducation*" },
-#    @{ Name = "Teams"; Id = "XP8BT8DW290MPQ"; PackageName = "*Teams*" },
-    @{ Name = "Minecraft Launcher"; Id = "9PGW18NPBZV5"; PackageName = "*4297127D64EC6*" },
-    @{ Name = "Minecraft Bedrock"; Id = "9NBLGGH2JHXJ"; PackageName = "*MinecraftUWP*" }
-#    @{ Name = "Scratch 3"; Id = "9pfgj25jl6x3"; PackageName = "*Scratch*" }
+    @{ Name = "Minecraft Education"; Id = "9NBLGGH4R2R6"; PackageName = "*MinecraftEducation*" },
+    @{ Name = "Teams"; Id = "XP8BT8DW290MPQ"; PackageName = "*Teams*" },
+    @{ Name = "Scratch 3"; Id = "9pfgj25jl6x3"; PackageName = "*Scratch*" }
 )
 
 $LogFile = "C:\Applications\StoreAppInstallLog.txt"  # Change path as needed
