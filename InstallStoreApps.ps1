@@ -7,7 +7,7 @@ $Apps = @(
     @{ Name = "Scratch 3"; Id = "9pfgj25jl6x3"; PackageName = "*Scratch*" }
 )
 
-$LogFile = "C:\Applications\StoreAppInstallLog.txt"  # Change path as needed
+$LogFile = "C:\Users\LibUser\StoreAppInstallLog.txt"  # Change path as needed
 
 # Ensure log directory exists
 $LogDir = Split-Path $LogFile
