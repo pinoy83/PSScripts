@@ -66,9 +66,10 @@ if (-not (Test-Path $ntUserDat)) {
 
 function Test-HiveLoaded {
     param([string]$Sid)
-    $out = & reg.exe query "HKU\$Sid" 2>&1
+    & reg.exe query "HKU\$Sid" > $null 2>&1
     return ($LASTEXITCODE -eq 0)
 }
+
 
 $hiveLoaded = Test-HiveLoaded -Sid $SID
 $mountedByScript = $false
