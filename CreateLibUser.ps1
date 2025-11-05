@@ -144,25 +144,6 @@ function Test-AutoLoginConfigured {
     }
 }
 
-# Function to disable autologin
-function Disable-AutoLogin {
-    try {
-        Write-Host "Disabling autologin..." -ForegroundColor Yellow
-        
-        $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        
-        Set-ItemProperty -Path $registryPath -Name "AutoAdminLogon" -Value "0" -Type String
-        Remove-ItemProperty -Path $registryPath -Name "DefaultPassword" -ErrorAction SilentlyContinue
-        
-        Write-Host "Autologin disabled successfully." -ForegroundColor Green
-        return $true
-    }
-    catch {
-        Write-Host "Error disabling autologin: $($_.Exception.Message)" -ForegroundColor Red
-        return $false
-    }
-}
-
 # Function to display current autologin status
 function Get-AutoLoginStatus {
     try {
