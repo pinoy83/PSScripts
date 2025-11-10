@@ -1,5 +1,7 @@
 # PowerShell script to add N360 registry key
-# Creates the registry key: HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\N360
+# Creates registry keys for both 32-bit and 64-bit registry paths
+# 32-bit OS: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\N360
+# 64-bit OS: HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\N360
 
 # Check if running as Administrator
 function Test-Administrator {
@@ -26,29 +28,56 @@ catch {
     Write-Host "Warning: Could not modify execution policy." -ForegroundColor Yellow
 }
 
-# Define the registry path
-$registryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\N360"
+# Define the registry paths
+$registryPath64 = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\N360"
+$registryPath32 = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\N360"
+
+$successCount = 0
+$totalKeys = 2
 
 try {
-    # Check if the key already exists
-    if (Test-Path $registryPath) {
-        Write-Host "Registry key already exists: $registryPath" -ForegroundColor Yellow
-        Write-Host "No action needed." -ForegroundColor Green
+    # Create the 64-bit registry key (WOW6432Node)
+    Write-Host "`nCreating registry key: $registryPath64" -ForegroundColor Yellow
+    if (Test-Path $registryPath64) {
+        Write-Host "Registry key already exists: $registryPath64" -ForegroundColor Cyan
+        $successCount++
     } else {
-        # Create the registry key
-        Write-Host "Creating registry key: $registryPath" -ForegroundColor Green
-        New-Item -Path $registryPath -Force | Out-Null
+        New-Item -Path $registryPath64 -Force | Out-Null
         
-        # Verify the key was created
-        if (Test-Path $registryPath) {
+        if (Test-Path $registryPath64) {
             Write-Host "Registry key created successfully!" -ForegroundColor Green
+            $successCount++
         } else {
             Write-Host "Failed to create registry key." -ForegroundColor Red
-            exit 1
         }
     }
     
-    Write-Host "`nOperation completed successfully." -ForegroundColor Green
+    # Create the 32-bit registry key
+    Write-Host "`nCreating registry key: $registryPath32" -ForegroundColor Yellow
+    if (Test-Path $registryPath32) {
+        Write-Host "Registry key already exists: $registryPath32" -ForegroundColor Cyan
+        $successCount++
+    } else {
+        New-Item -Path $registryPath32 -Force | Out-Null
+        
+        if (Test-Path $registryPath32) {
+            Write-Host "Registry key created successfully!" -ForegroundColor Green
+            $successCount++
+        } else {
+            Write-Host "Failed to create registry key." -ForegroundColor Red
+        }
+    }
+    
+    # Summary
+    Write-Host "`n=================================" -ForegroundColor Cyan
+    if ($successCount -eq $totalKeys) {
+        Write-Host "Operation completed successfully." -ForegroundColor Green
+        Write-Host "All registry keys created/verified: $successCount/$totalKeys" -ForegroundColor Green
+    } else {
+        Write-Host "Operation completed with warnings." -ForegroundColor Yellow
+        Write-Host "Registry keys created/verified: $successCount/$totalKeys" -ForegroundColor Yellow
+        exit 1
+    }
 }
 catch {
     Write-Host "Error occurred: $($_.Exception.Message)" -ForegroundColor Red
@@ -57,8 +86,17 @@ catch {
 
 # Optional: Display the registry key structure
 try {
-    Write-Host "`nRegistry Key Information:" -ForegroundColor Cyan
-    Get-Item $registryPath | Format-List
+    Write-Host "`nRegistry Keys Information:" -ForegroundColor Cyan
+    
+    if (Test-Path $registryPath64) {
+        Write-Host "`n64-bit path (WOW6432Node):" -ForegroundColor Yellow
+        Get-Item $registryPath64 | Format-List
+    }
+    
+    if (Test-Path $registryPath32) {
+        Write-Host "32-bit path:" -ForegroundColor Yellow
+        Get-Item $registryPath32 | Format-List
+    }
 }
 catch {
     Write-Host "Could not display registry key information." -ForegroundColor Yellow
