@@ -1,5 +1,8 @@
-# Windows 11 Pro LibUser Creation and Autologin Configuration Script
-# This script creates LibUser with a blank password and configures autologin
+# Windows 11 Pro - LibUser Creation with OOBE Skip (All-in-One)
+# This script:
+# 1. Configures system to skip Out-of-Box Experience
+# 2. Creates LibUser with blank password
+# 3. Configures autologin for LibUser
 # Requires Administrator privileges
 
 # Function to check if running as Administrator
@@ -13,9 +16,15 @@ function Test-Administrator {
 function Write-LogEntry {
     param([string]$Message)
     
-    $logFile = "C:\applications\CreateLibUserScript.log"
+    $logFile = "C:\applications\LibUserSetup.log"
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] $Message"
+    
+    # Ensure directory exists
+    $logDir = Split-Path -Parent $logFile
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
     
     # Write to log file
     $logEntry | Out-File $logFile -Append -Force
@@ -24,95 +33,181 @@ function Write-LogEntry {
     Write-Host $Message -ForegroundColor Green
 }
 
-# Function to create LibUser account with blank password
-function New-LibUser {
+# ============================================
+# OOBE SKIP FUNCTIONS
+# ============================================
+
+function Set-SkipOOBE {
     try {
-        Write-Host "Creating LibUser account with blank password..." -ForegroundColor Green
+        Write-Host "Configuring registry to skip OOBE for new users..." -ForegroundColor Green
         
-        # Create the user account with no password
-        $newUser = New-LocalUser -Name "LibUser" -NoPassword -FullName "Library User" -Description "Limited user account for Public access."
+        $oobePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE"
         
-        if ($newUser) {
-            Write-Host "LibUser account created successfully (standard privileges, no password)." -ForegroundColor Green
-            
-            # Set password to never expire
-            Set-LocalUser -Name "LibUser" -PasswordNeverExpires $true
-            
-            # Add LibUser to the Users security group
-            try {
-                Write-Host "Adding LibUser to Users security group..." -ForegroundColor Yellow
-                Add-LocalGroupMember -Group "Users" -Member "LibUser" -ErrorAction Stop
-                Write-Host "LibUser successfully added to Users group." -ForegroundColor Green
-            }
-            catch [Microsoft.PowerShell.Commands.MemberExistsException] {
-                Write-Host "LibUser is already a member of Users group." -ForegroundColor Yellow
-            }
-            catch {
-                Write-Host "Warning: Could not add LibUser to Users group: $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-Host "LibUser account created but may need manual group assignment." -ForegroundColor Yellow
-            }
-            
-            return $true
-        } else {
-            Write-Host "Failed to create LibUser account." -ForegroundColor Red
-            return $false
+        if (-not (Test-Path $oobePath)) {
+            New-Item -Path $oobePath -Force | Out-Null
         }
+        
+        Set-ItemProperty -Path $oobePath -Name "DisablePrivacyExperience" -Value 1 -Type DWord -ErrorAction Stop
+        Set-ItemProperty -Path $oobePath -Name "SkipMachineOOBE" -Value 1 -Type DWord -ErrorAction Stop
+        Set-ItemProperty -Path $oobePath -Name "SkipUserOOBE" -Value 1 -Type DWord -ErrorAction Stop
+        Set-ItemProperty -Path $oobePath -Name "DisableMSAccountPage" -Value 1 -Type DWord -ErrorAction Stop
+        
+        Write-LogEntry "OOBE skip settings configured"
+        return $true
     }
     catch {
-        Write-Host "Error creating LibUser account: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Error configuring OOBE settings: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
 
-# Function to configure autologin for LibUser with blank password
+function Disable-WelcomeExperience {
+    try {
+        Write-Host "Disabling Windows Welcome Experience..." -ForegroundColor Green
+        
+        $cloudContentPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
+        
+        if (-not (Test-Path $cloudContentPath)) {
+            New-Item -Path $cloudContentPath -Force | Out-Null
+        }
+        
+        Set-ItemProperty -Path $cloudContentPath -Name "DisableWindowsConsumerFeatures" -Value 1 -Type DWord -ErrorAction Stop
+        
+        Write-LogEntry "Windows Welcome Experience disabled"
+        return $true
+    }
+    catch {
+        Write-Host "Error disabling Welcome Experience: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+function Disable-FirstLogonAnimation {
+    try {
+        Write-Host "Disabling first logon animation..." -ForegroundColor Green
+        
+        $winlogonPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        
+        if (-not (Test-Path $winlogonPath)) {
+            New-Item -Path $winlogonPath -Force | Out-Null
+        }
+        
+        Set-ItemProperty -Path $winlogonPath -Name "EnableFirstLogonAnimation" -Value 0 -Type DWord -ErrorAction Stop
+        
+        Write-LogEntry "First logon animation disabled"
+        return $true
+    }
+    catch {
+        Write-Host "Error disabling first logon animation: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+function Disable-CortanaAndSearch {
+    try {
+        Write-Host "Disabling Cortana..." -ForegroundColor Green
+        
+        $searchPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+        
+        if (-not (Test-Path $searchPath)) {
+            New-Item -Path $searchPath -Force | Out-Null
+        }
+        
+        Set-ItemProperty -Path $searchPath -Name "AllowCortana" -Value 0 -Type DWord -ErrorAction Stop
+        
+        Write-LogEntry "Cortana disabled"
+        return $true
+    }
+    catch {
+        Write-Host "Error disabling Cortana: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+function Set-DefaultUserOOBESkip {
+    try {
+        Write-Host "Configuring default user profile..." -ForegroundColor Green
+        
+        $defaultUserHive = "C:\Users\Default\NTUSER.DAT"
+        $mountPoint = "HKLM\DefaultUser"
+        
+        if (Test-Path $defaultUserHive) {
+            $null = & reg load $mountPoint $defaultUserHive 2>&1
+            
+            if ($LASTEXITCODE -eq 0) {
+                $regPath = "HKLM:\DefaultUser\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement"
+                if (-not (Test-Path $regPath)) {
+                    New-Item -Path $regPath -Force | Out-Null
+                }
+                Set-ItemProperty -Path $regPath -Name "ScoobeSystemSettingEnabled" -Value 0 -Type DWord -ErrorAction SilentlyContinue
+                
+                [gc]::Collect()
+                Start-Sleep -Seconds 2
+                $null = & reg unload $mountPoint 2>&1
+                
+                Write-LogEntry "Default user profile configured"
+                return $true
+            }
+        }
+        return $false
+    }
+    catch {
+        try { & reg unload "HKLM\DefaultUser" 2>&1 | Out-Null } catch {}
+        return $false
+    }
+}
+
+# ============================================
+# USER CREATION FUNCTIONS
+# ============================================
+
+function New-LibUser {
+    try {
+        Write-Host "Creating LibUser account with blank password..." -ForegroundColor Green
+        
+        $newUser = New-LocalUser -Name "LibUser" -NoPassword -FullName "Library User" -Description "Limited user account for Public access."
+        
+        if ($newUser) {
+            Write-Host "LibUser account created successfully." -ForegroundColor Green
+            
+            Set-LocalUser -Name "LibUser" -PasswordNeverExpires $true
+            
+            try {
+                Add-LocalGroupMember -Group "Users" -Member "LibUser" -ErrorAction Stop
+                Write-Host "LibUser added to Users group." -ForegroundColor Green
+            }
+            catch [Microsoft.PowerShell.Commands.MemberExistsException] {
+                Write-Host "LibUser already in Users group." -ForegroundColor Yellow
+            }
+            
+            Write-LogEntry "LibUser account created with blank password"
+            return $true
+        }
+        return $false
+    }
+    catch {
+        Write-Host "Error creating LibUser: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
 function Set-AutoLogin {
     try {
         Write-Host "Configuring autologin for LibUser..." -ForegroundColor Green
         
-        # Registry path for Winlogon
         $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
         
-        # Verify registry path exists
         if (-not (Test-Path $registryPath)) {
             Write-Host "Error: Registry path $registryPath does not exist." -ForegroundColor Red
             return $false
         }
         
-        # Set autologin registry values with individual error handling
-        try {
-            Set-ItemProperty -Path $registryPath -Name "AutoAdminLogon" -Value "1" -Type String -ErrorAction Stop
-            Write-Host "Set AutoAdminLogon = 1" -ForegroundColor Green
-        }
-        catch {
-            throw "Failed to set AutoAdminLogon: $($_.Exception.Message)"
-        }
+        Set-ItemProperty -Path $registryPath -Name "AutoAdminLogon" -Value "1" -Type String -ErrorAction Stop
+        Set-ItemProperty -Path $registryPath -Name "DefaultUserName" -Value "LibUser" -Type String -ErrorAction Stop
+        Set-ItemProperty -Path $registryPath -Name "DefaultPassword" -Value "" -Type String -ErrorAction Stop
+        Set-ItemProperty -Path $registryPath -Name "DefaultDomainName" -Value $env:COMPUTERNAME -Type String -ErrorAction Stop
         
-        try {
-            Set-ItemProperty -Path $registryPath -Name "DefaultUserName" -Value "LibUser" -Type String -ErrorAction Stop
-            Write-Host "Set DefaultUserName = LibUser" -ForegroundColor Green
-        }
-        catch {
-            throw "Failed to set DefaultUserName: $($_.Exception.Message)"
-        }
-        
-        try {
-            # Set blank password (empty string)
-            Set-ItemProperty -Path $registryPath -Name "DefaultPassword" -Value "" -Type String -ErrorAction Stop
-            Write-Host "Set DefaultPassword (blank)" -ForegroundColor Green
-        }
-        catch {
-            throw "Failed to set DefaultPassword: $($_.Exception.Message)"
-        }
-        
-        try {
-            Set-ItemProperty -Path $registryPath -Name "DefaultDomainName" -Value $env:COMPUTERNAME -Type String -ErrorAction Stop
-            Write-Host "Set DefaultDomainName = $env:COMPUTERNAME" -ForegroundColor Green
-        }
-        catch {
-            throw "Failed to set DefaultDomainName: $($_.Exception.Message)"
-        }
-        
-        Write-Host "Autologin configured successfully for LibUser." -ForegroundColor Green
+        Write-LogEntry "Autologin configured for LibUser"
         return $true
     }
     catch {
@@ -121,14 +216,11 @@ function Set-AutoLogin {
     }
 }
 
-# Function to check if autologin is configured for LibUser
 function Test-AutoLoginConfigured {
     try {
         $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
         
-        # Check if registry path exists
         if (-not (Test-Path $registryPath)) {
-            Write-Host "Warning: Registry path $registryPath does not exist." -ForegroundColor Yellow
             return $false
         }
         
@@ -138,122 +230,150 @@ function Test-AutoLoginConfigured {
         return ($autoAdminLogon.AutoAdminLogon -eq "1" -and $defaultUserName.DefaultUserName -eq "LibUser")
     }
     catch {
-        Write-Host "Error checking autologin status: $($_.Exception.Message)" -ForegroundColor Yellow
         return $false
     }
 }
 
-# Function to display current autologin status
-function Get-AutoLoginStatus {
-    try {
-        $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        
-        # Check if registry path exists
-        if (-not (Test-Path $registryPath)) {
-            Write-Host "Registry path $registryPath does not exist." -ForegroundColor Red
-            return
-        }
-        
-        $autoAdminLogon = Get-ItemProperty -Path $registryPath -Name "AutoAdminLogon" -ErrorAction SilentlyContinue
-        $defaultUserName = Get-ItemProperty -Path $registryPath -Name "DefaultUserName" -ErrorAction SilentlyContinue
-        
-        if ($autoAdminLogon -and $autoAdminLogon.AutoAdminLogon -eq "1") {
-            if ($defaultUserName -and $defaultUserName.DefaultUserName) {
-                Write-Host "Autologin is ENABLED for user: $($defaultUserName.DefaultUserName)" -ForegroundColor Green
-            } else {
-                Write-Host "Autologin is ENABLED but no default user set" -ForegroundColor Yellow
-            }
-        } else {
-            Write-Host "Autologin is DISABLED" -ForegroundColor Yellow
-        }
-    }
-    catch {
-        Write-Host "Could not determine autologin status: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
+# ============================================
+# MAIN EXECUTION
+# ============================================
 
-# Main execution
-Write-Host "Windows 11 Pro LibUser Setup Script" -ForegroundColor Cyan
-Write-Host "===================================" -ForegroundColor Cyan
-Write-Host "Creates LibUser with blank password and configures autologin" -ForegroundColor Cyan
+Write-Host "========================================================" -ForegroundColor Cyan
+Write-Host "Windows 11 Pro - LibUser Setup with OOBE Skip" -ForegroundColor Cyan
+Write-Host "========================================================" -ForegroundColor Cyan
+Write-Host "This script will:" -ForegroundColor Cyan
+Write-Host "  1. Configure Windows to skip Out-of-Box Experience" -ForegroundColor Cyan
+Write-Host "  2. Create LibUser account (blank password)" -ForegroundColor Cyan
+Write-Host "  3. Configure automatic login" -ForegroundColor Cyan
+Write-Host "========================================================" -ForegroundColor Cyan
 
-# Check if running as Administrator
+# Check Administrator privileges
 if (-not (Test-Administrator)) {
-    Write-Host "This script requires Administrator privileges. Please run as Administrator." -ForegroundColor Red
+    Write-Host "ERROR: This script requires Administrator privileges." -ForegroundColor Red
+    Write-Host "Please right-click and select 'Run as Administrator'" -ForegroundColor Red
     exit 1
 }
 
-# Set execution policy for current process
+# Set execution policy
 try {
     Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-    Write-Host "Execution policy set for current session." -ForegroundColor Green
+    Write-Host "[OK] Execution policy set" -ForegroundColor Green
 }
 catch {
-    Write-Host "Warning: Could not modify execution policy." -ForegroundColor Yellow
+    Write-Host "Warning: Could not modify execution policy" -ForegroundColor Yellow
 }
 
 try {
-    # Check if LibUser exists
-    $existingUser = Get-LocalUser -Name "LibUser" -ErrorAction SilentlyContinue
+    # STEP 1: Configure OOBE Skip
+    Write-Host "`n[STEP 1] Configuring OOBE Skip Settings..." -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
     
-    if ($existingUser) {
-        Write-Host "LibUser already exists." -ForegroundColor Yellow
-        
-        # Check if autologin is configured
-        if (Test-AutoLoginConfigured) {
-            $message = "LibUser exists and autologin is already configured. No changes needed."
-            Write-LogEntry $message
-        } else {
-            Write-Host "Autologin not configured. Setting up autologin..." -ForegroundColor Yellow
-            if (Set-AutoLogin) {
-                Write-LogEntry "Autologin configured for existing LibUser account."
-            }
-        }
-    } else {
-        # Create LibUser
-        if (New-LibUser) {
-            Write-LogEntry "LibUser account created successfully with blank password."
-            Write-Host "Setting up autologin..." -ForegroundColor Yellow
-            if (Set-AutoLogin) {
-                Write-LogEntry "Autologin configured for new LibUser account."
-            }
-        }
+    $oobeResults = @{
+        "Skip OOBE" = Set-SkipOOBE
+        "Disable Welcome" = Disable-WelcomeExperience
+        "Disable Animation" = Disable-FirstLogonAnimation
+        "Disable Cortana" = Disable-CortanaAndSearch
+        "Default User Profile" = Set-DefaultUserOOBESkip
     }
     
-    # Display final status
-    Write-Host "`nFinal Status:" -ForegroundColor Cyan
-    Get-AutoLoginStatus
-    Write-Host "LibUser is configured as a standard (non-administrator) user with blank password." -ForegroundColor Green
-    Write-Host "System will automatically login as LibUser on restart." -ForegroundColor Yellow
-    
-<#     $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
-    $logFile = Join-Path $scriptDir "CreateLibUserScript2.log"
-    Write-Host "`nLog file location: $logFile" -ForegroundColor Cyan #>
+        foreach ($key in $oobeResults.Keys) {
+            $status = if ($oobeResults[$key]) { "[OK]" } else { "[~]" }
+            $color = if ($oobeResults[$key]) { "Green" } else { "Yellow" }
+            Write-Host "$status $key" -ForegroundColor $color
+        }
+        
+        # STEP 2: Create/Configure LibUser
+        Write-Host "`n[STEP 2] Setting up LibUser Account..." -ForegroundColor Cyan
+        Write-Host "=======================================" -ForegroundColor Cyan
+        
+        $existingUser = Get-LocalUser -Name "LibUser" -ErrorAction SilentlyContinue
+        
+        if ($existingUser) {
+            Write-Host "LibUser already exists." -ForegroundColor Yellow
+            
+            if (Test-AutoLoginConfigured) {
+                Write-Host "[OK] Autologin already configured" -ForegroundColor Green
+                Write-LogEntry "LibUser exists with autologin - no changes needed"
+            } else {
+                Write-Host "Configuring autologin for existing LibUser..." -ForegroundColor Yellow
+                if (Set-AutoLogin) {
+                    Write-Host "[OK] Autologin configured" -ForegroundColor Green
+                }
+            }
+        } else {
+            if (New-LibUser) {
+                Write-Host "[OK] LibUser created" -ForegroundColor Green
+                if (Set-AutoLogin) {
+                    Write-Host "[OK] Autologin configured" -ForegroundColor Green
+                }
+            }
+        }
+        
+        # FINAL STATUS
+        Write-Host "`n========================================================" -ForegroundColor Cyan
+        Write-Host "SETUP COMPLETE" -ForegroundColor Green
+        Write-Host "========================================================" -ForegroundColor Cyan
+        Write-Host "[OK] OOBE will be skipped for new user logins" -ForegroundColor Green
+        Write-Host "[OK] LibUser account ready (standard user, blank password)" -ForegroundColor Green
+        Write-Host "[OK] System will auto-login as LibUser on restart" -ForegroundColor Green
+        Write-Host "`nLog file: C:\applications\LibUserSetup.log" -ForegroundColor Cyan
+        Write-Host "`nNOTE: A system restart is recommended for all changes" -ForegroundColor Yellow
+        Write-Host "      to take full effect." -ForegroundColor Yellow
+        Write-Host "========================================================" -ForegroundColor Cyan
 }
 catch {
-    Write-Host "An error occurred: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "`nERROR: $($_.Exception.Message)" -ForegroundColor Red
+    Write-LogEntry "Error during setup: $($_.Exception.Message)"
     exit 1
 }
 
-# Example usage:
 <#
-# Simple usage - no parameters needed
-.\CreateLibUser.ps1
+.SYNOPSIS
+    Complete LibUser setup with OOBE skip for Windows 11 kiosk/library deployments
 
-# Script behavior:
-# - If LibUser doesn't exist: Creates LibUser with blank password and sets up autologin
-# - If LibUser exists but no autologin: Sets up autologin  
-# - If LibUser exists with autologin: Reports status to log file (no changes)
+.DESCRIPTION
+    This all-in-one script configures a Windows 11 system for public/kiosk use by:
+    
+    OOBE Configuration:
+    - Disables privacy experience screens
+    - Skips machine and user OOBE
+    - Disables Microsoft account prompts
+    - Removes Windows Welcome Experience
+    - Disables first logon animation
+    - Disables Cortana
+    - Configures default user profile
+    
+    User Setup:
+    - Creates LibUser with blank password
+    - Sets password to never expire
+    - Configures automatic login
+    - Standard user (non-admin) privileges
 
-# Security note:
-# - LibUser is created with a BLANK password
-# - This is suitable for kiosk/library scenarios with physical access controls
-# - Consider network security implications
+.EXAMPLE
+    .\CreateLibUser_SkipOOBE.ps1
+    
+    Runs complete setup - configures OOBE skip and creates LibUser
 
-# Log file:
-# - 'LibUserScript.log' is created next to the script
-# - Contains timestamps and actions performed
+.NOTES
+    Requirements:
+    - Windows 11 Pro
+    - Administrator privileges
+    - PowerShell 5.1 or higher
+    
+    Best Practices:
+    - Run on freshly imaged systems before user creation
+    - Can be run on existing systems (affects future logins)
+    - Restart system after running for full effect
+    - Use with Deep Freeze or similar for kiosk lockdown
+    
+    Security Considerations:
+    - LibUser has blank password (suitable for physical kiosks)
+    - Ensure physical security and network isolation as needed
+    - Consider additional lockdown policies for production use
 
-# To disable autologin later (run separately):
-# .\DisableLibUserAutoLogin.ps1
+.LINK
+    Related scripts: 
+    - SkipOOBE.ps1 (OOBE skip only)
+    - CreateLibUser.ps1 (User creation only)
+    - DisableLibUserAutoLogin.ps1 (Disable autologin)
 #>
