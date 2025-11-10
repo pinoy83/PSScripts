@@ -13,8 +13,7 @@ function Test-Administrator {
 function Write-LogEntry {
     param([string]$Message)
     
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
-    $logFile = Join-Path $scriptDir "CreateLibUserScript.log"
+    $logFile = "C:\applications\CreateLibUserScript.log"
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] $Message"
     
@@ -227,9 +226,9 @@ try {
     Write-Host "LibUser is configured as a standard (non-administrator) user with blank password." -ForegroundColor Green
     Write-Host "System will automatically login as LibUser on restart." -ForegroundColor Yellow
     
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
-    $logFile = Join-Path $scriptDir "LibUserScript.log"
-    Write-Host "`nLog file location: $logFile" -ForegroundColor Cyan
+<#     $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
+    $logFile = Join-Path $scriptDir "CreateLibUserScript2.log"
+    Write-Host "`nLog file location: $logFile" -ForegroundColor Cyan #>
 }
 catch {
     Write-Host "An error occurred: $($_.Exception.Message)" -ForegroundColor Red
