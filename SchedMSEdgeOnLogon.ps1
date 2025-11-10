@@ -1,5 +1,5 @@
-# Create MSEdge On Logon Scheduled Task
-# This script creates a scheduled task that launches Microsoft Edge on user logon
+# Create MSEdge On Logon Scheduled Task from XML
+# This script imports a scheduled task from an XML file
 # Requires Administrator privileges
 
 # Function to check if running as Administrator
@@ -25,8 +25,8 @@ function Write-LogEntry {
 }
 
 # Main execution
-Write-Host "Create MSEdge On Logon Scheduled Task" -ForegroundColor Cyan
-Write-Host "=====================================" -ForegroundColor Cyan
+Write-Host "Create MSEdge On Logon Scheduled Task from XML" -ForegroundColor Cyan
+Write-Host "==============================================" -ForegroundColor Cyan
 
 # Check if running as Administrator
 if (-not (Test-Administrator)) {
@@ -35,6 +35,19 @@ if (-not (Test-Administrator)) {
 }
 
 try {
+    # Path to the XML file (same directory as script)
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $xmlPath = Join-Path $scriptDir "MSEdgeOnLogon.xml"
+    
+    # Check if XML file exists
+    if (-not (Test-Path $xmlPath)) {
+        Write-Host "Error: XML file not found at $xmlPath" -ForegroundColor Red
+        Write-LogEntry "Error: XML file not found at $xmlPath"
+        exit 1
+    }
+    
+    Write-Host "Found XML file: $xmlPath" -ForegroundColor Cyan
+    
     # Check if task already exists
     $existingTask = Get-ScheduledTask -TaskName "MSEdgeOnLogon" -ErrorAction SilentlyContinue
     
@@ -52,72 +65,27 @@ try {
         }
     }
     
-    # Get LibUser SID
+    # Get LibUser for the task
     $libUser = Get-LocalUser -Name "LibUser" -ErrorAction Stop
     $userSID = $libUser.SID.Value
     Write-Host "LibUser SID: $userSID" -ForegroundColor Cyan
     
-    # Define task action
-    $action = New-ScheduledTaskAction `
-        -Execute "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
-        -Argument "--start-maximized --new-window C:\Users\LibUser\Desktop\Conditions_of_Use_for_Public_Access_PCs.html"
+    # Register the scheduled task from XML
+    Register-ScheduledTask -Xml (Get-Content $xmlPath | Out-String) -TaskName "MSEdgeOnLogon" -User "LibUser" -ErrorAction Stop
     
-    # Define trigger (10 seconds after logon)
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $trigger.Delay = "PT10S"  # 10 second delay
-            
-        # Define principal (run as LibUser with least privilege)
-        $principal = New-ScheduledTaskPrincipal `
-            -UserId $userSID `
-            -LogonType Interactive `
-            -RunLevel Limited
-        
-        # Define settings
-        $settings = New-ScheduledTaskSettingsSet `
-            -MultipleInstances IgnoreNew `
-            -AllowHardTerminate `
-            -StartWhenAvailable:$false `
-            -RunOnlyIfNetworkAvailable:$false `
-            -AllowStartOnDemand `
-            -Enabled `
-            -Hidden:$false `
-            -RunOnlyIfIdle:$false `
-            -WakeToRun:$false `
-            -ExecutionTimeLimit (New-TimeSpan -Hours 72) `
-            -Priority 7
-        
-        # Configure battery settings separately (not available as cmdlet parameters)
-        $settings.DisallowStartIfOnBatteries = $true
-        $settings.StopIfGoingOnBatteries = $true
-        
-        # Register the scheduled task
-        $task = Register-ScheduledTask `
-            -TaskName "MSEdgeOnLogon" `
-            -Action $action `
-            -Trigger $trigger `
-            -Principal $principal `
-            -Settings $settings `
-            -Description "Launches Microsoft Edge with Terms of Use page when LibUser logs in"
-        
-    if ($task) {
-        Write-Host "`n[OK] Scheduled task 'MSEdgeOnLogon' created successfully!" -ForegroundColor Green
-        Write-LogEntry "MSEdgeOnLogon scheduled task created successfully"
-        
-        # Display task details
-        Write-Host "`nTask Details:" -ForegroundColor Cyan
-        Write-Host "  Name: MSEdgeOnLogon" -ForegroundColor White
-        Write-Host "  Trigger: At logon (10 second delay)" -ForegroundColor White
-        Write-Host "  User: LibUser ($userSID)" -ForegroundColor White
-        Write-Host "  Action: Launch Edge with Terms of Use" -ForegroundColor White
-        Write-Host "  Status: Enabled" -ForegroundColor White
-        
-        Write-Host "`nNote: Ensure the file exists at:" -ForegroundColor Yellow
-        Write-Host "  C:\Users\LibUser\Desktop\Conditions_of_Use_for_Public_Access_PCs.html" -ForegroundColor Yellow
-    } else {
-        Write-Host "Failed to create scheduled task." -ForegroundColor Red
-        Write-LogEntry "Failed to create MSEdgeOnLogon task"
-        exit 1
-    }
+    Write-Host "`n[OK] Scheduled task 'MSEdgeOnLogon' created successfully from XML!" -ForegroundColor Green
+    Write-LogEntry "MSEdgeOnLogon scheduled task imported from XML successfully"
+    
+    # Display task details
+    $task = Get-ScheduledTask -TaskName "MSEdgeOnLogon"
+    Write-Host "`nTask Details:" -ForegroundColor Cyan
+    Write-Host "  Name: $($task.TaskName)" -ForegroundColor White
+    Write-Host "  State: $($task.State)" -ForegroundColor White
+    Write-Host "  User: LibUser" -ForegroundColor White
+    Write-Host "  Description: $($task.Description)" -ForegroundColor White
+    
+    Write-Host "`nNote: Ensure the file exists at:" -ForegroundColor Yellow
+    Write-Host "  C:\Users\LibUser\Desktop\Conditions_of_Use_for_Public_Access_PCs.html" -ForegroundColor Yellow
     
     Write-Host "`nLog file: C:\applications\CreateMSEdgeTask.log" -ForegroundColor Cyan
 }
@@ -129,16 +97,11 @@ catch {
 
 # Example usage:
 <#
-# Create the scheduled task
-.\CreateMSEdgeTask.ps1
-
-# The task will:
-# - Run when LibUser logs in
-# - Wait 10 seconds after logon
-# - Launch Microsoft Edge in maximized mode
-# - Open the Terms of Use HTML file from LibUser's desktop
+# Create the scheduled task from XML
+.\SchedMSEdgeOnLogon.ps1
 
 # Prerequisites:
+# - MSEdgeOnLogon.xml must be in the same directory as the script
 # - LibUser account must exist
 # - The HTML file must exist at: C:\Users\LibUser\Desktop\Conditions_of_Use_for_Public_Access_PCs.html
 
