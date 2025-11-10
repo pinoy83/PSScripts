@@ -57,11 +57,11 @@ function Remove-LibUser {
                 Write-LogEntry "Deleting LibUser profile..."
                 
                 # Check if profile exists
-                $profile = Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.SID -eq $sid }
+                $userProfile = Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.SID -eq $sid }
                 
-                if ($profile) {
-                    Remove-CimInstance -InputObject $profile -ErrorAction Stop
-                    Write-LogEntry "LibUser profile deleted successfully from $($profile.LocalPath)"
+                if ($userProfile) {
+                    Remove-CimInstance -InputObject $UserProfile -ErrorAction Stop
+                    Write-LogEntry "LibUser profile deleted successfully from $($UserProfile.LocalPath)"
                 }
                 else {
                     Write-LogEntry "No profile found for LibUser (SID: $sid)."
@@ -94,7 +94,6 @@ function Clear-AutoLogin {
             return
         }
         
-        $autoAdminLogon = Get-ItemProperty -Path $registryPath -Name "AutoAdminLogon" -ErrorAction SilentlyContinue
         $defaultUserName = Get-ItemProperty -Path $registryPath -Name "DefaultUserName" -ErrorAction SilentlyContinue
         
         # Only clear if it's set for LibUser
