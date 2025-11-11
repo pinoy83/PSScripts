@@ -12,7 +12,7 @@ These scripts are aimed at:
 Since this is a work-in-progress repo, expect frequent changes and updates as scripts are refined.
 
 ## 📂 Repository
-Location: [github.com/pinoy83/PSScripts](https://github.com/pinoy83/PSScripts)
+Location: [github.com/ulsclibraries/PSScripts](https://github.com/ulsclibraries/PSScripts)
 
 ## ⚠️ Disclaimer
 These scripts are provided **as-is** and are primarily for testing.  
@@ -21,4 +21,4 @@ Use them at your own risk — test in a safe environment before applying to prod
 ## 🚀 Getting Started
 1. Clone the repo:
    ```powershell
-   git clone https://github.com/pinoy83/PSScripts.git
+   git clone https://github.com/ulsclibraries/PSScripts.git
