@@ -4,7 +4,8 @@
 $Apps = @(
     @{ Name = "Minecraft Education"; Id = "9NBLGGH4R2R6"; PackageName = "*MinecraftEducation*" },
     @{ Name = "Teams"; Id = "XP8BT8DW290MPQ"; PackageName = "*Teams*" },
-    @{ Name = "Scratch 3"; Id = "9pfgj25jl6x3"; PackageName = "*Scratch*" }
+    @{ Name = "Scratch 3"; Id = "9pfgj25jl6x3"; PackageName = "*Scratch*" },
+    @{ Name = "Discord"; Id = "XPDC2RH70K22MN"; PackageName = "*Discord*" }
 )
 
 $LogFile = "C:\Users\LibUser\StoreAppInstallLog.txt"  # Change path as needed
